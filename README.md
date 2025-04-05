@@ -6,6 +6,9 @@
 
 DayaChat is a powerful multi-model chatbot application built with Streamlit that supports various Large Language Model providers including OpenAI GPT-4o, Google Gemini, and DeepSeek.
 
+Check out the live demo of this app:
+https://dayachat.streamlit.app/
+
 
 ## Table of Contents
 
