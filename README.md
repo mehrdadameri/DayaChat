@@ -6,7 +6,6 @@
 
 DayaChat is a powerful multi-model chatbot application built with Streamlit that supports various Large Language Model providers including OpenAI GPT-4o, Google Gemini, and DeepSeek.
 
-![DayaChat Interface](https://via.placeholder.com/800x400?text=DayaChat+Interface)
 
 ## Table of Contents
 
@@ -50,7 +49,7 @@ DayaChat is a powerful multi-model chatbot application built with Streamlit that
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/yourusername/dayachat.git
+   git clone https://github.com/mehrdadameri/dayachat.git
    cd dayachat
    ```
 
@@ -90,11 +89,11 @@ DayaChat is a powerful multi-model chatbot application built with Streamlit that
 
 2. **Access the web interface**:
 
-   Open your web browser and navigate to http://localhost:8501
+   Open your web browser and navigate to (i.e.: http://localhost:8501)
 
 3. **Configure API keys**:
 
-   Enter your API keys in the sidebar for the models you wish to use
+   Enter your API keys for the models you wish to use
 
 4. **Select your preferred model** from the dropdown menu
 
@@ -110,14 +109,14 @@ To use DayaChat with different LLM providers, you'll need to obtain API keys:
 2. Create an account or sign in
 3. Navigate to API keys section
 4. Create a new API key
-5. Copy the key and paste it in DayaChat's sidebar
+5. Copy the key and paste it in DayaChat
 
 ### Google Gemini
 
 1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
 2. Sign in with your Google account
 3. Create a new API key
-4. Copy the key and paste it in DayaChat's sidebar
+4. Copy the key and paste it in DayaChat
 
 ### DeepSeek
 
@@ -129,16 +128,12 @@ For future integration:
 2. Create an account or sign in
 3. Navigate to the API section
 4. Generate a new API key
-5. Copy the key and paste it in DayaChat's sidebar
+5. Copy the key and paste it in DayaChat
 
 ## Data Storage
 
-Chat histories are stored locally in JSON format within the `chat_history` directory. Each chat session is assigned a unique UUID identifier file.
+Chat histories are stored locally in JSON format within the `chat_history` directory.
 
-## Development Notes
-
-- The DeepSeek integration is currently provided as a placeholder. In a production environment, implement the actual API calls using DeepSeek's official SDK.
-- Feel free to contribute to this project by submitting issues or pull requests.
 
 ## License
 
