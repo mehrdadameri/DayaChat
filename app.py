@@ -17,6 +17,12 @@ CONFIG_DIR = Path("config")
 CONFIG_DIR.mkdir(exist_ok=True)
 API_KEYS_FILE = CONFIG_DIR / "api_keys.json"
 
+# Function to detect if running on Streamlit Cloud
+def is_streamlit_cloud():
+    """Check if the app is running on Streamlit Cloud"""
+    # Streamlit Cloud sets this environment variable
+    return os.environ.get('STREAMLIT_SHARING') == 'true' or os.environ.get('IS_STREAMLIT_CLOUD') == 'true'
+
 # Function to load and apply custom CSS
 def apply_custom_css():
     # Base CSS to apply the Poppins font to all elements
@@ -223,12 +229,7 @@ def update_api_key(provider, value):
     
     return True
 
-# Function to detect if running on Streamlit Cloud
-def is_streamlit_cloud():
-    """Check if the app is running on Streamlit Cloud"""
-    # Streamlit Cloud sets this environment variable
-    return os.environ.get('STREAMLIT_SHARING') == 'true' or os.environ.get('IS_STREAMLIT_CLOUD') == 'true'
-
+# Function to toggle API configuration
 def toggle_api_config():
     """Toggle API configuration visibility"""
     st.session_state.show_api_config = not st.session_state.show_api_config
