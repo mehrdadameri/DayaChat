@@ -20,8 +20,27 @@ API_KEYS_FILE = CONFIG_DIR / "api_keys.json"
 # Function to detect if running on Streamlit Cloud
 def is_streamlit_cloud():
     """Check if the app is running on Streamlit Cloud"""
-    # Streamlit Cloud sets this environment variable
-    return os.environ.get('STREAMLIT_SHARING') == 'true' or os.environ.get('IS_STREAMLIT_CLOUD') == 'true'
+    # Streamlit Cloud sets these environment variables
+    return (os.environ.get('STREAMLIT_SHARING') == 'true' or 
+            os.environ.get('IS_STREAMLIT_CLOUD') == 'true' or
+            os.environ.get('STREAMLIT_RUN_PATH', '').startswith('/mount/src'))
+
+# Function to get a unique session ID
+def get_or_create_session_id():
+    """Get or create a unique session ID for the current user"""
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+    return st.session_state.session_id
+
+# Initialize a unique session ID
+session_id = get_or_create_session_id()
+
+# Create a session-specific namespace for API keys
+def get_session_key(key):
+    """Create a session-specific key name"""
+    if is_streamlit_cloud():
+        return f"{session_id}_{key}"
+    return key
 
 # Function to load and apply custom CSS
 def apply_custom_css():
@@ -85,19 +104,19 @@ def save_api_keys(api_keys):
         st.warning(f"Could not set secure permissions on API keys file: {e}")
 
 # Initialize session state for chat histories if not exists
-if "chat_histories" not in st.session_state:
-    st.session_state.chat_histories = {}
+if get_session_key("chat_histories") not in st.session_state:
+    st.session_state[get_session_key("chat_histories")] = {}
 
-if "current_chat_id" not in st.session_state:
-    st.session_state.current_chat_id = None
+if get_session_key("current_chat_id") not in st.session_state:
+    st.session_state[get_session_key("current_chat_id")] = None
 
 # Initialize separate API keys for each user session
-if "user_api_keys" not in st.session_state:
+if get_session_key("user_api_keys") not in st.session_state:
     # Load API keys from disk when running locally
     if not is_streamlit_cloud() and API_KEYS_FILE.exists():
-        st.session_state.user_api_keys = load_api_keys()
+        st.session_state[get_session_key("user_api_keys")] = load_api_keys()
     else:
-        st.session_state.user_api_keys = {"openai": "", "deepseek": "", "gemini": ""}
+        st.session_state[get_session_key("user_api_keys")] = {"openai": "", "deepseek": "", "gemini": ""}
 
 # Keep backward compatibility for pre-existing sessions
 if "api_keys" not in st.session_state:
@@ -106,23 +125,50 @@ if "api_keys" not in st.session_state:
     else:
         st.session_state.api_keys = {"openai": "", "deepseek": "", "gemini": ""}
 
-if "selected_model" not in st.session_state:
-    st.session_state.selected_model = "gpt-4o"
+if get_session_key("selected_model") not in st.session_state:
+    st.session_state[get_session_key("selected_model")] = "gpt-4o"
     
+if get_session_key("show_api_config") not in st.session_state:
+    st.session_state[get_session_key("show_api_config")] = False
 
-for chat_id, chat in st.session_state.get("chat_histories", {}).items():
+# Shortcuts for session state access
+def get_chat_histories():
+    return st.session_state[get_session_key("chat_histories")]
+
+def get_current_chat_id():
+    return st.session_state[get_session_key("current_chat_id")]
+
+def set_current_chat_id(chat_id):
+    st.session_state[get_session_key("current_chat_id")] = chat_id
+
+def get_user_api_keys():
+    return st.session_state[get_session_key("user_api_keys")]
+
+def get_selected_model():
+    return st.session_state[get_session_key("selected_model")]
+
+def set_selected_model(model):
+    st.session_state[get_session_key("selected_model")] = model
+
+def get_show_api_config():
+    return st.session_state[get_session_key("show_api_config")]
+
+def set_show_api_config(value):
+    st.session_state[get_session_key("show_api_config")] = value
+
+# Update chat models if needed
+for chat_id, chat in get_chat_histories().items():
     if chat.get("model") == "gemini":
         chat["model"] = "gemini-2.0-flash"
-
-if "show_api_config" not in st.session_state:
-    st.session_state.show_api_config = False
 
 def save_chat_history(chat_id, history):
     """Save chat history to a JSON file"""
     try:
-        file_path = HISTORY_DIR / f"{chat_id}.json"
-        with open(file_path, 'w') as f:
-            json.dump(history, f)
+        # For local deployment, save to disk
+        if not is_streamlit_cloud():
+            file_path = HISTORY_DIR / f"{chat_id}.json"
+            with open(file_path, 'w') as f:
+                json.dump(history, f)
     except Exception as e:
         st.error(f"Failed to save chat history: {e}")
 
@@ -173,12 +219,12 @@ def delete_chat_history(chat_id):
         file_path = HISTORY_DIR / f"{chat_id}.json"
         if file_path.exists():
             file_path.unlink()
-            if chat_id in st.session_state.chat_histories:
-                del st.session_state.chat_histories[chat_id]
+            if chat_id in get_chat_histories():
+                del get_chat_histories()[chat_id]
             
             # If the deleted chat was the current one, reset current_chat_id
-            if st.session_state.current_chat_id == chat_id:
-                st.session_state.current_chat_id = None
+            if get_current_chat_id() == chat_id:
+                set_current_chat_id(None)
                 
             return True
         return False
@@ -190,13 +236,13 @@ def create_new_chat():
     """Create a new chat with a unique ID"""
     chat_id = str(uuid.uuid4())
     timestamp = datetime.datetime.now()
-    st.session_state.chat_histories[chat_id] = {
+    get_chat_histories()[chat_id] = {
         "title": f"New Chat",
-        "model": st.session_state.selected_model,
+        "model": get_selected_model(),
         "messages": [],
         "timestamp": timestamp.isoformat()
     }
-    save_chat_history(chat_id, st.session_state.chat_histories[chat_id])
+    save_chat_history(chat_id, get_chat_histories()[chat_id])
     return chat_id
 
 def update_api_key(provider, value):
@@ -216,13 +262,13 @@ def update_api_key(provider, value):
         st.warning("Google Gemini API key appears too short. Please check your key.")
         
     # Store API key in user's session
-    st.session_state.user_api_keys[provider] = value.strip() if value else ""
+    get_user_api_keys()[provider] = value.strip() if value else ""
     
     # Also save to disk if running locally (not on Streamlit Cloud)
     if not is_streamlit_cloud():
         try:
             # Also update the shared api_keys for backward compatibility
-            st.session_state.api_keys[provider] = st.session_state.user_api_keys[provider]
+            st.session_state.api_keys[provider] = get_user_api_keys()[provider]
             save_api_keys(st.session_state.api_keys)
         except Exception as e:
             st.error(f"Failed to save API key to disk: {e}")
@@ -232,7 +278,7 @@ def update_api_key(provider, value):
 # Function to toggle API configuration
 def toggle_api_config():
     """Toggle API configuration visibility"""
-    st.session_state.show_api_config = not st.session_state.show_api_config
+    set_show_api_config(not get_show_api_config())
 
 def generate_chat_title(messages, max_length=40):
     """Generate a title based on the first user message in the chat"""
@@ -269,8 +315,8 @@ def generate_chat_title(messages, max_length=40):
 
 def update_chat_title(chat_id):
     """Update the chat title based on its content"""
-    if chat_id in st.session_state.chat_histories:
-        chat = st.session_state.chat_histories[chat_id]
+    if chat_id in get_chat_histories():
+        chat = get_chat_histories()[chat_id]
         if chat["messages"]:
             chat["title"] = generate_chat_title(chat["messages"])
             save_chat_history(chat_id, chat)
@@ -278,7 +324,7 @@ def update_chat_title(chat_id):
 def get_openai_response(messages):
     """Get response from OpenAI API"""
     try:
-        api_key = st.session_state.user_api_keys["openai"]
+        api_key = get_user_api_keys()["openai"]
         if not api_key:
             return "Error: OpenAI API key is missing. Please add your API key in the settings."
             
@@ -302,7 +348,7 @@ def get_openai_response(messages):
 def get_gemini_response(messages):
     """Get response from Google's Gemini API"""
     try:
-        api_key = st.session_state.user_api_keys["gemini"]
+        api_key = get_user_api_keys()["gemini"]
         if not api_key:
             return "Error: Google Gemini API key is missing. Please add your API key in the settings."
             
@@ -376,7 +422,7 @@ def get_gemini_response(messages):
 def get_deepseek_response(messages):
     """Get response from DeepSeek API (placeholder)"""
     try:
-        api_key = st.session_state.user_api_keys["deepseek"]
+        api_key = get_user_api_keys()["deepseek"]
         if not api_key:
             return "Error: DeepSeek API key is missing. Please add your API key in the settings."
             
@@ -408,26 +454,31 @@ def get_model_response(messages, model):
     else:
         return "Error: Unknown model selected."
 
-# Load existing chat histories
-st.session_state.chat_histories.update(load_chat_histories())
+# Load existing chat histories for local deployment only
+if not is_streamlit_cloud():
+    get_chat_histories().update(load_chat_histories())
 
 # Sidebar
 with st.sidebar:
     st.title("DayaChat")
     
+    # Session indicator
+    if is_streamlit_cloud():
+        st.caption(f"Session: {session_id[:8]}...")
+    
     # New chat button
     if st.button("New Chat"):
-        st.session_state.current_chat_id = create_new_chat()
+        set_current_chat_id(create_new_chat())
         st.rerun()
     
     # Chat history - sort by timestamp (newest first)
     st.subheader("Chat History")
-    if not st.session_state.chat_histories:
+    if not get_chat_histories():
         st.info("No chat history yet. Start a new chat!")
     else:
         # Get all chats and sort by timestamp (newest first)
         sorted_chats = sorted(
-            st.session_state.chat_histories.items(),
+            get_chat_histories().items(),
             key=lambda x: x[1].get("timestamp", ""),
             reverse=True  # Newest first
         )
@@ -441,9 +492,9 @@ with st.sidebar:
                     display_title = display_title[:25] + "..."
                 
                 if st.button(display_title, key=f"select_{chat_id}", use_container_width=True):
-                    st.session_state.current_chat_id = chat_id
+                    set_current_chat_id(chat_id)
 
-                    st.session_state.selected_model = chat_data["model"]
+                    set_selected_model(chat_data["model"])
                     st.rerun()
             with col2:
                 if st.button("🗑️", key=f"delete_{chat_id}", help="Delete this chat"):
@@ -458,31 +509,31 @@ if st.button("Choose Model", key="top_settings", use_container_width=False):
     toggle_api_config()
 
 # Show API configuration only if the button is clicked
-if st.session_state.show_api_config:
+if get_show_api_config():
     st.subheader("Model & API Settings")
     
     # Model selection inside the API config
     selected_model = st.selectbox(
         "Select Model",
         ["gpt-4o", "gemini-2.0-flash", "deepseek"],
-        index=["gpt-4o", "gemini-2.0-flash", "deepseek"].index(st.session_state.selected_model if st.session_state.selected_model != "gemini" else "gemini-2.0-flash"),
+        index=["gpt-4o", "gemini-2.0-flash", "deepseek"].index(get_selected_model() if get_selected_model() != "gemini" else "gemini-2.0-flash"),
         key="main_model_selector"
     )
     
     # Update the selected model in session state
-    if selected_model != st.session_state.selected_model:
-        st.session_state.selected_model = selected_model
+    if selected_model != get_selected_model():
+        set_selected_model(selected_model)
         # If there's a current chat, update its model
-        if st.session_state.current_chat_id:
-            current_chat = st.session_state.chat_histories[st.session_state.current_chat_id]
+        if get_current_chat_id():
+            current_chat = get_chat_histories()[get_current_chat_id()]
             current_chat["model"] = selected_model
-            save_chat_history(st.session_state.current_chat_id, current_chat)
+            save_chat_history(get_current_chat_id(), current_chat)
     
     # Show only the API key input for the currently selected model
-    if st.session_state.selected_model == "gpt-4o":
+    if get_selected_model() == "gpt-4o":
         openai_key = st.text_input(
             "OpenAI API Key",
-            value=st.session_state.user_api_keys["openai"],
+            value=get_user_api_keys()["openai"],
             type="password",
             key="main_openai_key_input"
         )
@@ -490,10 +541,10 @@ if st.session_state.show_api_config:
             if update_api_key("openai", openai_key):
                 st.success("OpenAI API Key saved successfully!")
             
-    elif st.session_state.selected_model == "gemini-2.0-flash":
+    elif get_selected_model() == "gemini-2.0-flash":
         gemini_key = st.text_input(
             "Google Gemini API Key",
-            value=st.session_state.user_api_keys["gemini"],
+            value=get_user_api_keys()["gemini"],
             type="password",
             key="main_gemini_key_input"
         )
@@ -501,10 +552,10 @@ if st.session_state.show_api_config:
             if update_api_key("gemini", gemini_key):
                 st.success("Gemini API Key saved successfully!")
             
-    elif st.session_state.selected_model == "deepseek":
+    elif get_selected_model() == "deepseek":
         deepseek_key = st.text_input(
             "DeepSeek API Key",
-            value=st.session_state.user_api_keys["deepseek"],
+            value=get_user_api_keys()["deepseek"],
             type="password",
             key="main_deepseek_key_input"
         )
@@ -513,33 +564,33 @@ if st.session_state.show_api_config:
                 st.success("DeepSeek API Key saved successfully!")
 
 # Display current chat and handle new messages
-if st.session_state.current_chat_id is None and len(st.session_state.chat_histories) > 0:
+if get_current_chat_id() is None and len(get_chat_histories()) > 0:
     # Set the first chat as current if available
     sorted_chats = sorted(
-        st.session_state.chat_histories.items(),
+        get_chat_histories().items(),
         key=lambda x: x[1].get("timestamp", ""),
         reverse=True  # Newest first
     )
     
     if sorted_chats:
-        st.session_state.current_chat_id = sorted_chats[0][0]
+        set_current_chat_id(sorted_chats[0][0])
         # Update the selected model to match the chat's model
-        current_chat = st.session_state.chat_histories[st.session_state.current_chat_id]
-        st.session_state.selected_model = current_chat["model"]
-        if st.session_state.selected_model == "gemini":
-            st.session_state.selected_model = "gemini-2.0-flash"
+        current_chat = get_chat_histories()[sorted_chats[0][0]]
+        set_selected_model(current_chat["model"])
+        if current_chat["model"] == "gemini":
+            set_selected_model("gemini-2.0-flash")
 
-if st.session_state.current_chat_id is None:
+if get_current_chat_id() is None:
     # No chats available, create a new one
-    st.session_state.current_chat_id = create_new_chat()
+    set_current_chat_id(create_new_chat())
     st.rerun()
 
 # Make sure the current chat ID is valid and exists
-if st.session_state.current_chat_id not in st.session_state.chat_histories:
-    st.session_state.current_chat_id = create_new_chat()
+if get_current_chat_id() not in get_chat_histories():
+    set_current_chat_id(create_new_chat())
     st.rerun()
 
-current_chat = st.session_state.chat_histories[st.session_state.current_chat_id]
+current_chat = get_chat_histories()[get_current_chat_id()]
 current_model = current_chat["model"]
 if current_model == "gemini":
     current_model = "gemini-2.0-flash"
@@ -564,7 +615,7 @@ if user_input:
         current_chat["title"] = generate_chat_title([{"role": "user", "content": user_input}])
     
 
-    current_chat["model"] = st.session_state.selected_model
+    current_chat["model"] = get_selected_model()
     current_model = current_chat["model"]
     
 
@@ -602,4 +653,4 @@ if user_input:
     current_chat["messages"].append({"role": "assistant", "content": response})
     
     # Save updated chat history
-    save_chat_history(st.session_state.current_chat_id, current_chat) 
+    save_chat_history(get_current_chat_id(), current_chat) 
