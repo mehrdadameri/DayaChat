@@ -85,8 +85,20 @@ if "chat_histories" not in st.session_state:
 if "current_chat_id" not in st.session_state:
     st.session_state.current_chat_id = None
 
+# Initialize separate API keys for each user session
+if "user_api_keys" not in st.session_state:
+    # Load API keys from disk when running locally
+    if not is_streamlit_cloud() and API_KEYS_FILE.exists():
+        st.session_state.user_api_keys = load_api_keys()
+    else:
+        st.session_state.user_api_keys = {"openai": "", "deepseek": "", "gemini": ""}
+
+# Keep backward compatibility for pre-existing sessions
 if "api_keys" not in st.session_state:
-    st.session_state.api_keys = load_api_keys()
+    if not is_streamlit_cloud() and API_KEYS_FILE.exists():
+        st.session_state.api_keys = load_api_keys()
+    else:
+        st.session_state.api_keys = {"openai": "", "deepseek": "", "gemini": ""}
 
 if "selected_model" not in st.session_state:
     st.session_state.selected_model = "gpt-4o"
@@ -182,30 +194,40 @@ def create_new_chat():
     return chat_id
 
 def update_api_key(provider, value):
-    """Update API key and save to disk"""
+    """Update API key in the user's session only"""
     if provider not in ["openai", "deepseek", "gemini"]:
         st.error(f"Invalid API provider: {provider}")
         return False
         
-
     if value and not value.strip():
         st.error("API key cannot be empty or just whitespace")
         return False
         
-
     if provider == "openai" and value and not value.startswith("sk-"):
         st.warning("OpenAI API keys typically start with 'sk-'. Please check your key.")
         
     if provider == "gemini" and value and len(value.strip()) < 10:
         st.warning("Google Gemini API key appears too short. Please check your key.")
         
-    st.session_state.api_keys[provider] = value.strip() if value else ""
-    try:
-        save_api_keys(st.session_state.api_keys)
-        return True
-    except Exception as e:
-        st.error(f"Failed to save API key: {e}")
-        return False
+    # Store API key in user's session
+    st.session_state.user_api_keys[provider] = value.strip() if value else ""
+    
+    # Also save to disk if running locally (not on Streamlit Cloud)
+    if not is_streamlit_cloud():
+        try:
+            # Also update the shared api_keys for backward compatibility
+            st.session_state.api_keys[provider] = st.session_state.user_api_keys[provider]
+            save_api_keys(st.session_state.api_keys)
+        except Exception as e:
+            st.error(f"Failed to save API key to disk: {e}")
+    
+    return True
+
+# Function to detect if running on Streamlit Cloud
+def is_streamlit_cloud():
+    """Check if the app is running on Streamlit Cloud"""
+    # Streamlit Cloud sets this environment variable
+    return os.environ.get('STREAMLIT_SHARING') == 'true' or os.environ.get('IS_STREAMLIT_CLOUD') == 'true'
 
 def toggle_api_config():
     """Toggle API configuration visibility"""
@@ -255,7 +277,7 @@ def update_chat_title(chat_id):
 def get_openai_response(messages):
     """Get response from OpenAI API"""
     try:
-        api_key = st.session_state.api_keys["openai"]
+        api_key = st.session_state.user_api_keys["openai"]
         if not api_key:
             return "Error: OpenAI API key is missing. Please add your API key in the settings."
             
@@ -277,9 +299,9 @@ def get_openai_response(messages):
         return f"Error: Could not get response from OpenAI API. {str(e)}"
 
 def get_gemini_response(messages):
-    """Get response from Google Gemini API"""
+    """Get response from Google's Gemini API"""
     try:
-        api_key = st.session_state.api_keys["gemini"]
+        api_key = st.session_state.user_api_keys["gemini"]
         if not api_key:
             return "Error: Google Gemini API key is missing. Please add your API key in the settings."
             
@@ -353,7 +375,7 @@ def get_gemini_response(messages):
 def get_deepseek_response(messages):
     """Get response from DeepSeek API (placeholder)"""
     try:
-        api_key = st.session_state.api_keys["deepseek"]
+        api_key = st.session_state.user_api_keys["deepseek"]
         if not api_key:
             return "Error: DeepSeek API key is missing. Please add your API key in the settings."
             
@@ -459,7 +481,7 @@ if st.session_state.show_api_config:
     if st.session_state.selected_model == "gpt-4o":
         openai_key = st.text_input(
             "OpenAI API Key",
-            value=st.session_state.api_keys["openai"],
+            value=st.session_state.user_api_keys["openai"],
             type="password",
             key="main_openai_key_input"
         )
@@ -470,7 +492,7 @@ if st.session_state.show_api_config:
     elif st.session_state.selected_model == "gemini-2.0-flash":
         gemini_key = st.text_input(
             "Google Gemini API Key",
-            value=st.session_state.api_keys["gemini"],
+            value=st.session_state.user_api_keys["gemini"],
             type="password",
             key="main_gemini_key_input"
         )
@@ -481,7 +503,7 @@ if st.session_state.show_api_config:
     elif st.session_state.selected_model == "deepseek":
         deepseek_key = st.text_input(
             "DeepSeek API Key",
-            value=st.session_state.api_keys["deepseek"],
+            value=st.session_state.user_api_keys["deepseek"],
             type="password",
             key="main_deepseek_key_input"
         )
