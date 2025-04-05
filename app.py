@@ -3,12 +3,19 @@ import os
 import json
 import uuid
 import datetime
+import hashlib
 from pathlib import Path
 import base64
 import re
 import openai
 from google import generativeai as genai
 
+# Attempt to import the cookie manager
+try:
+    import extra_streamlit_components as stx
+    COOKIE_MANAGER_AVAILABLE = True
+except ImportError:
+    COOKIE_MANAGER_AVAILABLE = False
 
 # Folders to store data
 HISTORY_DIR = Path("chat_history")
@@ -25,15 +32,54 @@ def is_streamlit_cloud():
             os.environ.get('IS_STREAMLIT_CLOUD') == 'true' or
             os.environ.get('STREAMLIT_RUN_PATH', '').startswith('/mount/src'))
 
-# Function to get a unique session ID
+# Get cookie manager instance
+def get_cookie_manager():
+    if COOKIE_MANAGER_AVAILABLE:
+        return stx.CookieManager()
+    return None
+
+# Initialize cookie manager (singleton)
+if "cookie_manager" not in st.session_state and COOKIE_MANAGER_AVAILABLE:
+    st.session_state.cookie_manager = get_cookie_manager()
+
+# Backup session ID method
 def get_or_create_session_id():
     """Get or create a unique session ID for the current user"""
     if "session_id" not in st.session_state:
-        st.session_state.session_id = str(uuid.uuid4())
+        # Create a unique ID that includes browser fingerprinting
+        user_agent = os.environ.get('HTTP_USER_AGENT', '')
+        remote_addr = os.environ.get('REMOTE_ADDR', '')
+        fingerprint = hashlib.md5(f"{user_agent}{remote_addr}".encode()).hexdigest()
+        st.session_state.session_id = f"{fingerprint}_{str(uuid.uuid4())}"
     return st.session_state.session_id
 
+# Function to get a truly unique session ID using cookies
+def get_secure_session_id():
+    if is_streamlit_cloud():
+        # Try using cookie manager for persistent session ID
+        if COOKIE_MANAGER_AVAILABLE and "cookie_manager" in st.session_state:
+            # Get existing cookie or set a new one
+            cookie_name = "daya_chat_session_id"
+            cookie_val = st.session_state.cookie_manager.get(cookie_name)
+            
+            if not cookie_val:
+                # Cookie doesn't exist, set a new one
+                new_id = str(uuid.uuid4())
+                st.session_state.cookie_manager.set(
+                    cookie_name, new_id,
+                    expires_at=datetime.datetime.now() + datetime.timedelta(days=30)
+                )
+                return new_id
+            return cookie_val
+            
+        # Fallback to session state
+        return get_or_create_session_id()
+    else:
+        # For local deployment, use simple session state
+        return "local_session"
+
 # Initialize a unique session ID
-session_id = get_or_create_session_id()
+session_id = get_secure_session_id()
 
 # Create a session-specific namespace for API keys
 def get_session_key(key):
